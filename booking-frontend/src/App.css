@@ -1,0 +1,160 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: #0b0f19;
+  color: #ffffff;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  margin: 0;
+  padding: 30px;
+}
+
+.booking-wrapper {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.top-nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid #1e2942;
+  padding-bottom: 16px;
+  margin-bottom: 24px;
+}
+
+.top-nav h1 {
+  color: #00d2ff;
+  margin: 0;
+  font-size: 24px;
+}
+
+.role-tabs {
+  display: flex;
+  gap: 10px;
+}
+
+.tab-btn {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #1e2942;
+  background: #141c2f;
+  color: #8f9cae;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.tab-btn.active {
+  background: #00d2ff;
+  color: #0b0f19;
+  border-color: #00d2ff;
+}
+
+.card-panel {
+  background: #141c2f;
+  border: 1px solid #1e2942;
+  border-radius: 12px;
+  padding: 24px;
+  margin-bottom: 24px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field-group label {
+  font-size: 13px;
+  color: #8f9cae;
+  font-weight: 600;
+}
+
+.field-group input,
+.field-group select {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #1e2942;
+  background: #0b0f19;
+  color: #ffffff;
+  font-size: 15px;
+  outline: none;
+}
+
+.slots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+  margin: 16px 0 24px 0;
+}
+
+.slot-btn {
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #1e2942;
+  background: #0b0f19;
+  color: #ffffff;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.slot-btn.selected {
+  background: #2cfd73;
+  color: #0b0f19;
+  border-color: #2cfd73;
+}
+
+.slot-btn:disabled {
+  background: #1a1f2e;
+  color: #4b5563;
+  text-decoration: line-through;
+  cursor: not-allowed;
+}
+
+.confirm-btn {
+  width: 100%;
+  padding: 14px;
+  background: #2cfd73;
+  color: #0b0f19;
+  font-weight: bold;
+  font-size: 16px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  padding: 14px;
+  text-align: left;
+  border-bottom: 1px solid #1e2942;
+}
+
+th {
+  color: #8f9cae;
+  font-size: 13px;
+  text-transform: uppercase;
+}
+
+.cancel-btn {
+  background: #ff4a5a;
+  color: #ffffff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-weight: bold;
+  cursor: pointer;
+}
