@@ -19,24 +19,54 @@ interface Appointment {
 }
 
 export default function App() {
-  const [role, setRole] = useState<"client" | "provider">("client");
+  const [role, setRole] = useState<"client" | "provider">(() => {
+    return (localStorage.getItem("booking_role") as "client" | "provider") || "client";
+  });
 
-  // Clean YYYY-MM-DD date string without array indexing
   const today = new Date().toISOString().slice(0, 10);
-  const [selectedDate, setSelectedDate] = useState<string>(today);
+  const [selectedDate, setSelectedDate] = useState<string>(() => {
+    return localStorage.getItem("booking_date") || today;
+  });
+
   const [slots, setSlots] = useState<Array<TimeSlot>>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>("");
-  const [serviceType, setServiceType] = useState<string>("1-on-1 Software Coaching");
-  const [clientName, setClientName] = useState<string>("");
-  const [clientEmail, setClientEmail] = useState<string>("");
+  const [serviceType, setServiceType] = useState<string>(() => {
+    return localStorage.getItem("booking_service") || "1-on-1 Software Coaching";
+  });
+  const [clientName, setClientName] = useState<string>(() => {
+    return localStorage.getItem("booking_name") || "";
+  });
+  const [clientEmail, setClientEmail] = useState<string>(() => {
+    return localStorage.getItem("booking_email") || "";
+  });
 
   const [appointments, setAppointments] = useState<Array<Appointment>>([]);
 
+  // Persist UI state automatically whenever values change
   useEffect(() => {
+    localStorage.setItem("booking_role", role);
+  }, [role]);
+
+  useEffect(() => {
+    localStorage.setItem("booking_date", selectedDate);
+  }, [selectedDate]);
+
+  useEffect(() => {
+    localStorage.setItem("booking_service", serviceType);
+  }, [serviceType]);
+
+  useEffect(() => {
+    localStorage.setItem("booking_name", clientName);
+  }, [clientName]);
+
+  useEffect(() => {
+    localStorage.setItem("booking_email", clientEmail);
+  }, [clientEmail]);
+
+  useEffect(() => {
+    fetchAppointments();
     if (role === "client") {
       fetchSlots(selectedDate);
-    } else {
-      fetchAppointments();
     }
   }, [role, selectedDate]);
 
@@ -88,7 +118,10 @@ export default function App() {
       alert("✅ " + data.message);
       setClientName("");
       setClientEmail("");
+      localStorage.removeItem("booking_name");
+      localStorage.removeItem("booking_email");
       fetchSlots(selectedDate);
+      fetchAppointments();
     } else {
       alert("❌ " + data.message);
       fetchSlots(selectedDate);
@@ -102,6 +135,7 @@ export default function App() {
       body: JSON.stringify({ id }),
     });
     fetchAppointments();
+    fetchSlots(selectedDate);
   };
 
   return (
