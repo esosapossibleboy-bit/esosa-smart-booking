@@ -1,21 +1,25 @@
 import { useState, useEffect } from "react";
+import AdminPortal from "./AdminPortal";
 import "./App.css";
 
 const RENDER_HOST = "esosa-booking-api.onrender.com";
 const API_BASE = `https://${RENDER_HOST}`;
+
+const SERVICE_PRICES: Record<string, number> = {
+  "1-on-1 Software Coaching": 120.0,
+  "Full-Stack Code Review": 85.0,
+  "Technical Consultation": 50.0,
+};
 
 interface TimeSlot {
   time: string;
   available: boolean;
 }
 
-interface Appointment {
+interface BookingConfirmation {
   id: number;
-  client_name: string;
-  client_email: string;
-  service_type: string;
-  appointment_date: string;
-  time_slot: string;
+  message: string;
+  emailSent: boolean;
 }
 
 export default function App() {
@@ -24,47 +28,25 @@ export default function App() {
   });
 
   const today = new Date().toISOString().slice(0, 10);
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return localStorage.getItem("booking_date") || today;
-  });
-
+  const [selectedDate, setSelectedDate] = useState<string>(() => localStorage.getItem("booking_date") || today);
   const [slots, setSlots] = useState<Array<TimeSlot>>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>("");
-  const [serviceType, setServiceType] = useState<string>(() => {
-    return localStorage.getItem("booking_service") || "1-on-1 Software Coaching";
-  });
-  const [clientName, setClientName] = useState<string>(() => {
-    return localStorage.getItem("booking_name") || "";
-  });
-  const [clientEmail, setClientEmail] = useState<string>(() => {
-    return localStorage.getItem("booking_email") || "";
-  });
+  const [serviceType, setServiceType] = useState<string>(
+    () => localStorage.getItem("booking_service") || "1-on-1 Software Coaching"
+  );
+  const [clientName, setClientName] = useState<string>(() => localStorage.getItem("booking_name") || "");
+  const [clientEmail, setClientEmail] = useState<string>(() => localStorage.getItem("booking_email") || "");
+  const [cardLast4, setCardLast4] = useState<string>("");
+  const [confirmation, setConfirmation] = useState<BookingConfirmation | null>(null);
+  const [adminCount, setAdminCount] = useState<number>(0);
 
-  const [appointments, setAppointments] = useState<Array<Appointment>>([]);
-
-  // Persist UI state automatically whenever values change
-  useEffect(() => {
-    localStorage.setItem("booking_role", role);
-  }, [role]);
+  useEffect(() => localStorage.setItem("booking_role", role), [role]);
+  useEffect(() => localStorage.setItem("booking_date", selectedDate), [selectedDate]);
+  useEffect(() => localStorage.setItem("booking_service", serviceType), [serviceType]);
+  useEffect(() => localStorage.setItem("booking_name", clientName), [clientName]);
+  useEffect(() => localStorage.setItem("booking_email", clientEmail), [clientEmail]);
 
   useEffect(() => {
-    localStorage.setItem("booking_date", selectedDate);
-  }, [selectedDate]);
-
-  useEffect(() => {
-    localStorage.setItem("booking_service", serviceType);
-  }, [serviceType]);
-
-  useEffect(() => {
-    localStorage.setItem("booking_name", clientName);
-  }, [clientName]);
-
-  useEffect(() => {
-    localStorage.setItem("booking_email", clientEmail);
-  }, [clientEmail]);
-
-  useEffect(() => {
-    fetchAppointments();
     if (role === "client") {
       fetchSlots(selectedDate);
     }
@@ -83,21 +65,13 @@ export default function App() {
     }
   };
 
-  const fetchAppointments = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/appointments`);
-      const data = await res.json();
-      if (data.status === "Success") {
-        setAppointments(data.appointments);
-      }
-    } catch (err) {
-      console.error("Failed to fetch appointments:", err);
-    }
-  };
-
   const handleBook = async () => {
     if (!clientName || !clientEmail || !selectedSlot) {
       alert("⚠️ Please enter your name, email, and pick an available time slot!");
+      return;
+    }
+    if (cardLast4.length !== 4 || !/^\d{4}$/.test(cardLast4)) {
+      alert("⚠️ Please enter the last 4 digits of your payment card (e.g. 4242)!");
       return;
     }
 
@@ -110,33 +84,30 @@ export default function App() {
         service_type: serviceType,
         appointment_date: selectedDate,
         time_slot: selectedSlot,
+        card_last4: cardLast4,
       }),
     });
     const data = await res.json();
 
     if (data.status === "Success") {
-      alert("✅ " + data.message);
+      setConfirmation({
+        id: data.appointment_id,
+        message: data.message,
+        emailSent: data.email_sent,
+      });
       setClientName("");
       setClientEmail("");
+      setCardLast4("");
       localStorage.removeItem("booking_name");
       localStorage.removeItem("booking_email");
       fetchSlots(selectedDate);
-      fetchAppointments();
     } else {
       alert("❌ " + data.message);
       fetchSlots(selectedDate);
     }
   };
 
-  const handleCancel = async (id: number) => {
-    await fetch(`${API_BASE}/cancel`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id }),
-    });
-    fetchAppointments();
-    fetchSlots(selectedDate);
-  };
+  const selectedPrice = SERVICE_PRICES[serviceType] || 50.0;
 
   return (
     <div className="booking-wrapper">
@@ -144,46 +115,51 @@ export default function App() {
         <div>
           <h1>📅 Esosa Smart Booking Platform</h1>
           <p style={{ color: "#8f9cae", margin: 0, fontSize: "14px" }}>
-            PostgreSQL Conflict-Free Scheduling • React + TypeScript
+            Payments • PDF Receipts • Email Alerts • Admin JWT
           </p>
         </div>
         <div className="role-tabs">
-          <button
-            className={`tab-btn ${role === "client" ? "active" : ""}`}
-            onClick={() => setRole("client")}
-          >
+          <button className={`tab-btn ${role === "client" ? "active" : ""}`} onClick={() => setRole("client")}>
             Client Booking
           </button>
-          <button
-            className={`tab-btn ${role === "provider" ? "active" : ""}`}
-            onClick={() => setRole("provider")}
-          >
-            Provider Admin ({appointments.length})
+          <button className={`tab-btn ${role === "provider" ? "active" : ""}`} onClick={() => setRole("provider")}>
+            Provider Admin {adminCount > 0 ? `(${adminCount})` : ""}
           </button>
         </div>
       </div>
 
+      {confirmation && (
+        <div className="toast-banner">
+          <div>
+            <strong>🔔 {confirmation.message}</strong>
+            <div style={{ fontSize: "13px", color: "#8f9cae", marginTop: "4px" }}>
+              {confirmation.emailSent
+                ? "📧 Email confirmation sent to your inbox!"
+                : "📧 Notification logged! Download your official PDF receipt below:"}
+            </div>
+          </div>
+          <a href={`${API_BASE}/receipt/${confirmation.id}`} target="_blank" rel="noreferrer">
+            <button className="pdf-btn">📄 Download PDF Receipt</button>
+          </a>
+        </div>
+      )}
+
       {role === "client" ? (
         <div className="card-panel">
-          <h2 style={{ marginTop: 0, color: "#00d2ff" }}>Book an Appointment</h2>
+          <h2 style={{ marginTop: 0, color: "#00d2ff" }}>Book & Pay for an Appointment</h2>
           <div className="form-grid">
             <div className="field-group">
-              <label>Service Type</label>
+              <label>Service Type & Fee</label>
               <select value={serviceType} onChange={(e) => setServiceType(e.target.value)}>
-                <option value="1-on-1 Software Coaching">1-on-1 Software Coaching (60 min)</option>
-                <option value="Full-Stack Code Review">Full-Stack Code Review (45 min)</option>
-                <option value="Technical Consultation">Technical Consultation (30 min)</option>
+                <option value="1-on-1 Software Coaching">1-on-1 Software Coaching — $120.00</option>
+                <option value="Full-Stack Code Review">Full-Stack Code Review — $85.00</option>
+                <option value="Technical Consultation">Technical Consultation — $50.00</option>
               </select>
             </div>
 
             <div className="field-group">
               <label>Select Date</label>
-              <input
-                type="date"
-                min={today}
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-              />
+              <input type="date" min={today} value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} />
             </div>
 
             <div className="field-group">
@@ -197,12 +173,23 @@ export default function App() {
             </div>
 
             <div className="field-group">
-              <label>Email Address</label>
+              <label>Email Address (For Confirmation)</label>
               <input
                 type="email"
                 placeholder="e.g. esosa@example.com"
                 value={clientEmail}
                 onChange={(e) => setClientEmail(e.target.value)}
+              />
+            </div>
+
+            <div className="field-group">
+              <label>Payment Card (Last 4 Digits)</label>
+              <input
+                type="text"
+                maxLength={4}
+                placeholder="e.g. 4242"
+                value={cardLast4}
+                onChange={(e) => setCardLast4(e.target.value)}
               />
             </div>
           </div>
@@ -224,47 +211,11 @@ export default function App() {
           </div>
 
           <button className="confirm-btn" onClick={handleBook}>
-            Confirm Reservation
+            Pay ${selectedPrice.toFixed(2)} & Confirm Reservation
           </button>
         </div>
       ) : (
-        <div className="card-panel">
-          <h2 style={{ marginTop: 0, color: "#00d2ff" }}>Provider Schedule & Reservations</h2>
-          {appointments.length === 0 ? (
-            <p style={{ color: "#8f9cae" }}>No appointments booked yet.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Time</th>
-                  <th>Client</th>
-                  <th>Service</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {appointments.map((appt) => (
-                  <tr key={appt.id}>
-                    <td><strong>{appt.appointment_date}</strong></td>
-                    <td style={{ color: "#2cfd73", fontWeight: "bold" }}>{appt.time_slot}</td>
-                    <td>
-                      {appt.client_name}
-                      <br />
-                      <span style={{ fontSize: "12px", color: "#8f9cae" }}>{appt.client_email}</span>
-                    </td>
-                    <td>{appt.service_type}</td>
-                    <td>
-                      <button className="cancel-btn" onClick={() => handleCancel(appt.id)}>
-                        Cancel Slot
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
+        <AdminPortal apiBase={API_BASE} onAppointmentsCountChange={setAdminCount} />
       )}
     </div>
   );

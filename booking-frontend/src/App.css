@@ -158,3 +158,43 @@ th {
   font-weight: bold;
   cursor: pointer;
 }
+.toast-banner {
+  background: rgba(44, 253, 115, 0.15);
+  border: 1px solid #2cfd73;
+  color: #ffffff;
+  padding: 16px 20px;
+  border-radius: 10px;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.pdf-btn {
+  background: #00d2ff;
+  color: #0b0f19;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-weight: bold;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.admin-login-box {
+  max-width: 380px;
+  margin: 20px auto;
+  text-align: center;
+}
+
+.admin-login-box input {
+  width: 100%;
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: 8px;
+  border: 1px solid #1e2942;
+  background: #0b0f19;
+  color: #ffffff;
+  font-size: 15px;
+}
