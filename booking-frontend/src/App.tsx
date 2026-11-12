@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import "./App.css";
 
-const RENDER_HOST = "esosa-booking-api.onrender.com";
+const RENDER_HOST = "https://esosa-booking-api.onrender.com";
 const API_BASE = `https://${RENDER_HOST}`;
 
 interface TimeSlot {
@@ -21,17 +21,16 @@ interface Appointment {
 export default function App() {
   const [role, setRole] = useState<"client" | "provider">("client");
 
-  // Client Booking State
-  const today = new Date().toISOString().split("T")[0];
+  // Clean YYYY-MM-DD date string without array indexing
+  const today = new Date().toISOString().slice(0, 10);
   const [selectedDate, setSelectedDate] = useState<string>(today);
-  const [slots, setSlots] = useState<TimeSlot[]>([]);
+  const [slots, setSlots] = useState<Array<TimeSlot>>([]);
   const [selectedSlot, setSelectedSlot] = useState<string>("");
   const [serviceType, setServiceType] = useState<string>("1-on-1 Software Coaching");
   const [clientName, setClientName] = useState<string>("");
   const [clientEmail, setClientEmail] = useState<string>("");
 
-  // Provider Dashboard State
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [appointments, setAppointments] = useState<Array<Appointment>>([]);
 
   useEffect(() => {
     if (role === "client") {
@@ -49,8 +48,8 @@ export default function App() {
         setSlots(data.slots);
         setSelectedSlot("");
       }
-    } catch {
-      console.error("Could not fetch slots from booking_server.py");
+    } catch (err) {
+      console.error("Failed to fetch slots:", err);
     }
   };
 
@@ -61,8 +60,8 @@ export default function App() {
       if (data.status === "Success") {
         setAppointments(data.appointments);
       }
-    } catch {
-      console.error("Could not fetch appointments");
+    } catch (err) {
+      console.error("Failed to fetch appointments:", err);
     }
   };
 
