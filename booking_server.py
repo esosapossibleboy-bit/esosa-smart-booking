@@ -78,8 +78,9 @@ def send_confirmation_email(to_email, client_name, service, amount, date_str, sl
         print(f"Email Simulated To: {to_email} | Booking #{appt_id}: {service}")
         return False
     try:
+        resend_url = "https://" + "://resend.com" + "/emails"
         res = requests.post(
-            "https://resend.com",
+            resend_url,
             headers={
                 "Authorization": f"Bearer {RESEND_API_KEY}",
                 "Content-Type": "application/json",
@@ -100,6 +101,7 @@ def send_confirmation_email(to_email, client_name, service, amount, date_str, sl
             },
             timeout=10,
         )
+        print(f"Resend Status: {res.status_code} | Response: {res.text}")
         return res.status_code in (200, 201)
     except Exception as e:
         print(f"Email send failed: {e}")
