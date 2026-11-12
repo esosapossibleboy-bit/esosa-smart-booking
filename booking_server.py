@@ -19,7 +19,6 @@ SECRET_KEY = os.environ.get("SECRET_KEY", "esosa-booking-admin-super-secret-key-
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
-# Optional SMTP Email Settings (e.g. Gmail App Password)
 SMTP_EMAIL = os.environ.get("SMTP_EMAIL")
 SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
 
@@ -55,7 +54,6 @@ def init_db():
         UNIQUE(appointment_date, time_slot)
     )
     """)
-    # Ensure existing table gets new columns safely if upgrading
     cursor.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS amount REAL NOT NULL DEFAULT 50.0;")
     cursor.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'Paid';")
     conn.commit()
@@ -80,7 +78,7 @@ def admin_required(f):
 
 def send_confirmation_email(to_email, client_name, service, amount, date_str, slot_str, appt_id):
     if not SMTP_EMAIL or not SMTP_PASSWORD:
-        print(f"📧 [Email Simulated] To: {to_email} | Booking #{appt_id}: {service} (${amount:.2f}) on {date_str} at {slot_str}")
+        print(f"Email Simulated To: {to_email} | Booking #{appt_id}: {service}")
         return False
     try:
         msg = EmailMessage()
@@ -96,12 +94,13 @@ def send_confirmation_email(to_email, client_name, service, amount, date_str, sl
             f"Date & Time: {date_str} at {slot_str}\n\n"
             f"Thank you for booking with Esosa Smart Booking!"
         )
-        with smtplib.SMTP_SSL("://gmail.com", 465) as smtp:
+        smtp_host = "smtp." + "gmail.com"
+        with smtplib.SMTP_SSL(smtp_host, 465) as smtp:
             smtp.login(SMTP_EMAIL, SMTP_PASSWORD)
             smtp.send_message(msg)
         return True
     except Exception as e:
-        print(f"⚠️ Email send failed: {e}")
+        print(f"Email send failed: {e}")
         return False
 
 @app.route("/", methods=["GET"])
@@ -160,9 +159,9 @@ def book_appointment():
             INSERT INTO appointments (client_name, client_email, service_type, amount, payment_status, appointment_date, time_slot)
             VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
             """,
-            (client_name, client_email, service_type, amount, f"Paid (Card •••• {card_last4})", appointment_date, time_slot)
+            (client_name, client_email, service_type, amount, f"Paid (Card **** {card_last4})", appointment_date, time_slot)
         )
-        new_id = cursor.fetchone()[0]
+        new_id = cursor.fetchone()
         conn.commit()
         email_sent = send_confirmation_email(client_email, client_name, service_type, amount, appointment_date, time_slot, new_id)
         return jsonify({
@@ -191,18 +190,20 @@ def download_receipt(appt_id):
     if not appt:
         return jsonify({"status": "Error", "message": "Appointment not found"}), 404
 
+    safe_status = str(appt["payment_status"]).replace("\u2022", "*")
+
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 18)
-    pdf.cell(0, 12, "Esosa Smart Booking - Official Receipt", ln=True)
+    pdf.cell(0, 12, "Esosa Smart Booking - Official Receipt", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "", 12)
     pdf.ln(6)
-    pdf.cell(0, 9, f"Confirmation ID: #{appt['id']}", ln=True)
-    pdf.cell(0, 9, f"Client Name: {appt['client_name']}", ln=True)
-    pdf.cell(0, 9, f"Client Email: {appt['client_email']}", ln=True)
-    pdf.cell(0, 9, f"Service: {appt['service_type']}", ln=True)
-    pdf.cell(0, 9, f"Date & Time: {appt['appointment_date']} at {appt['time_slot']}", ln=True)
-    pdf.cell(0, 9, f"Amount Paid: ${appt['amount']:.2f} ({appt['payment_status']})", ln=True)
+    pdf.cell(0, 9, f"Confirmation ID: #{appt['id']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 9, f"Client Name: {appt['client_name']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 9, f"Client Email: {appt['client_email']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 9, f"Service: {appt['service_type']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 9, f"Date & Time: {appt['appointment_date']} at {appt['time_slot']}", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 9, f"Amount Paid: ${appt['amount']:.2f} ({safe_status})", new_x="LMARGIN", new_y="NEXT")
 
     pdf_bytes = bytes(pdf.output())
     return send_file(
