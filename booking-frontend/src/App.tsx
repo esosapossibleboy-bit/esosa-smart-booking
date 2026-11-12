@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import "./App.css";
 
-const API_BASE = "http://localhost:8002";
+const RENDER_HOST = "://onrender.com";
+const API_BASE = `https://${RENDER_HOST}`;
 
 interface TimeSlot {
   time: string;
