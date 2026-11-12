@@ -1,15 +1,34 @@
 import os
+import io
+import datetime
+import smtplib
+from email.message import EmailMessage
+from functools import wraps
+import jwt
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from flask import Flask, request, jsonify
+from fpdf import FPDF
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
+SECRET_KEY = os.environ.get("SECRET_KEY", "esosa-booking-admin-super-secret-key-2026-secure")
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
 
-# Fixed daily business hours offered by the service provider
+# Optional SMTP Email Settings (e.g. Gmail App Password)
+SMTP_EMAIL = os.environ.get("SMTP_EMAIL")
+SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
+
+SERVICE_CATALOG = {
+    "1-on-1 Software Coaching": 120.00,
+    "Full-Stack Code Review": 85.00,
+    "Technical Consultation": 50.00,
+}
+
 AVAILABLE_SLOTS = [
     "09:00 AM", "10:00 AM", "11:00 AM",
     "01:00 PM", "02:00 PM", "03:00 PM", "04:00 PM"
@@ -20,77 +39,139 @@ def get_db_connection():
 
 def init_db():
     if not DATABASE_URL:
-        print("⚠️ Missing DATABASE_URL environment variable.")
         return
     conn = get_db_connection()
     cursor = conn.cursor()
-    
-    # 🛡️ UNIQUE(appointment_date, time_slot) prevents double-booking at the database level
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS appointments (
         id SERIAL PRIMARY KEY,
         client_name TEXT NOT NULL,
         client_email TEXT NOT NULL,
         service_type TEXT NOT NULL,
+        amount REAL NOT NULL DEFAULT 50.0,
+        payment_status TEXT NOT NULL DEFAULT 'Paid',
         appointment_date TEXT NOT NULL,
         time_slot TEXT NOT NULL,
         UNIQUE(appointment_date, time_slot)
     )
     """)
+    # Ensure existing table gets new columns safely if upgrading
+    cursor.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS amount REAL NOT NULL DEFAULT 50.0;")
+    cursor.execute("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT 'Paid';")
     conn.commit()
     cursor.close()
     conn.close()
 
+def admin_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return jsonify({"status": "Error", "message": "Admin login required"}), 401
+        token = auth_header.replace("Bearer ", "", 1).strip()
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+            if payload.get("role") != "admin":
+                return jsonify({"status": "Error", "message": "Unauthorized role"}), 403
+        except Exception:
+            return jsonify({"status": "Error", "message": "Invalid or expired admin token"}), 401
+        return f(*args, **kwargs)
+    return decorated
+
+def send_confirmation_email(to_email, client_name, service, amount, date_str, slot_str, appt_id):
+    if not SMTP_EMAIL or not SMTP_PASSWORD:
+        print(f"📧 [Email Simulated] To: {to_email} | Booking #{appt_id}: {service} (${amount:.2f}) on {date_str} at {slot_str}")
+        return False
+    try:
+        msg = EmailMessage()
+        msg["Subject"] = f"Booking Confirmed (#{appt_id}): {service}"
+        msg["From"] = SMTP_EMAIL
+        msg["To"] = to_email
+        msg.set_content(
+            f"Hi {client_name},\n\n"
+            f"Your appointment is confirmed and paid!\n"
+            f"Confirmation ID: #{appt_id}\n"
+            f"Service: {service}\n"
+            f"Amount Paid: ${amount:.2f}\n"
+            f"Date & Time: {date_str} at {slot_str}\n\n"
+            f"Thank you for booking with Esosa Smart Booking!"
+        )
+        with smtplib.SMTP_SSL("://gmail.com", 465) as smtp:
+            smtp.login(SMTP_EMAIL, SMTP_PASSWORD)
+            smtp.send_message(msg)
+        return True
+    except Exception as e:
+        print(f"⚠️ Email send failed: {e}")
+        return False
+
 @app.route("/", methods=["GET"])
 def health():
-    return jsonify({"status": "Booking API Online"})
+    return jsonify({"status": "Booking API Online", "services": SERVICE_CATALOG})
 
-# 📅 Get available vs. booked slots for a specific date
+@app.route("/admin/login", methods=["POST"])
+def admin_login():
+    data = request.json or {}
+    if data.get("username") == ADMIN_USERNAME and data.get("password") == ADMIN_PASSWORD:
+        token = jwt.encode({
+            "role": "admin",
+            "exp": datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=12)
+        }, SECRET_KEY, algorithm="HS256")
+        return jsonify({"status": "Success", "token": token})
+    return jsonify({"status": "Error", "message": "Invalid admin credentials"}), 401
+
 @app.route("/slots", methods=["GET"])
 def get_slots():
     target_date = request.args.get("date")
     if not target_date:
-        return jsonify({"status": "Error", "message": "Date parameter required"}), 400
-
+        return jsonify({"status": "Error", "message": "Date required"}), 400
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT time_slot FROM appointments WHERE appointment_date = %s", (target_date,))
     booked_rows = cursor.fetchall()
     cursor.close()
     conn.close()
+    booked_slots = {time_slot for (time_slot,) in booked_rows}
+    slots = [{"time": s, "available": s not in booked_slots} for s in AVAILABLE_SLOTS]
+    return jsonify({"status": "Success", "slots": slots, "services": SERVICE_CATALOG})
 
-    booked_slots = {row[0] for row in booked_rows}
-    slot_status = [
-        {"time": slot, "available": slot not in booked_slots}
-        for slot in AVAILABLE_SLOTS
-    ]
-    return jsonify({"status": "Success", "date": target_date, "slots": slot_status})
-
-# ✅ Reserve a new appointment with conflict detection
 @app.route("/book", methods=["POST"])
 def book_appointment():
-    data = request.json
+    data = request.json or {}
     client_name = data.get("client_name", "").strip()
     client_email = data.get("client_email", "").strip()
     service_type = data.get("service_type", "").strip()
     appointment_date = data.get("appointment_date", "").strip()
     time_slot = data.get("time_slot", "").strip()
+    card_last4 = data.get("card_last4", "").strip()
 
     if not all([client_name, client_email, service_type, appointment_date, time_slot]):
-        return jsonify({"status": "Error", "message": "Please fill in all booking details!"}), 400
+        return jsonify({"status": "Error", "message": "All fields are required"}), 400
+    if service_type not in SERVICE_CATALOG:
+        return jsonify({"status": "Error", "message": "Invalid service selected"}), 400
+    if len(card_last4) != 4 or not card_last4.isdigit():
+        return jsonify({"status": "Error", "message": "Valid 4-digit payment confirmation required"}), 402
 
+    amount = SERVICE_CATALOG[service_type]
     conn = get_db_connection()
     cursor = conn.cursor()
     try:
         cursor.execute(
             """
-            INSERT INTO appointments (client_name, client_email, service_type, appointment_date, time_slot)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO appointments (client_name, client_email, service_type, amount, payment_status, appointment_date, time_slot)
+            VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id
             """,
-            (client_name, client_email, service_type, appointment_date, time_slot)
+            (client_name, client_email, service_type, amount, f"Paid (Card •••• {card_last4})", appointment_date, time_slot)
         )
+        new_id = cursor.fetchone()[0]
         conn.commit()
-        return jsonify({"status": "Success", "message": f"Confirmed {service_type} on {appointment_date} at {time_slot}!"})
+        email_sent = send_confirmation_email(client_email, client_name, service_type, amount, appointment_date, time_slot, new_id)
+        return jsonify({
+            "status": "Success",
+            "appointment_id": new_id,
+            "amount": amount,
+            "email_sent": email_sent,
+            "message": f"Payment of ${amount:.2f} confirmed! Booking #{new_id} reserved."
+        })
     except psycopg2.IntegrityError:
         conn.rollback()
         return jsonify({"status": "Error", "message": "Sorry! That time slot was just booked by someone else."}), 409
@@ -98,8 +179,41 @@ def book_appointment():
         cursor.close()
         conn.close()
 
-# 📋 Provider Admin View: List all upcoming appointments
+@app.route("/receipt/<int:appt_id>", methods=["GET"])
+def download_receipt(appt_id):
+    conn = get_db_connection()
+    cursor = conn.cursor(cursor_factory=RealDictCursor)
+    cursor.execute("SELECT * FROM appointments WHERE id = %s", (appt_id,))
+    appt = cursor.fetchone()
+    cursor.close()
+    conn.close()
+
+    if not appt:
+        return jsonify({"status": "Error", "message": "Appointment not found"}), 404
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 12, "Esosa Smart Booking - Official Receipt", ln=True)
+    pdf.set_font("Helvetica", "", 12)
+    pdf.ln(6)
+    pdf.cell(0, 9, f"Confirmation ID: #{appt['id']}", ln=True)
+    pdf.cell(0, 9, f"Client Name: {appt['client_name']}", ln=True)
+    pdf.cell(0, 9, f"Client Email: {appt['client_email']}", ln=True)
+    pdf.cell(0, 9, f"Service: {appt['service_type']}", ln=True)
+    pdf.cell(0, 9, f"Date & Time: {appt['appointment_date']} at {appt['time_slot']}", ln=True)
+    pdf.cell(0, 9, f"Amount Paid: ${appt['amount']:.2f} ({appt['payment_status']})", ln=True)
+
+    pdf_bytes = bytes(pdf.output())
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"appointment_receipt_{appt_id}.pdf"
+    )
+
 @app.route("/appointments", methods=["GET"])
+@admin_required
 def list_appointments():
     conn = get_db_connection()
     cursor = conn.cursor(cursor_factory=RealDictCursor)
@@ -109,14 +223,13 @@ def list_appointments():
     conn.close()
     return jsonify({"status": "Success", "appointments": rows})
 
-# ❌ Provider Admin View: Cancel an appointment and free the slot
 @app.route("/cancel", methods=["POST"])
+@admin_required
 def cancel_appointment():
-    data = request.json
-    appt_id = data.get("id")
+    data = request.json or {}
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM appointments WHERE id = %s", (appt_id,))
+    cursor.execute("DELETE FROM appointments WHERE id = %s", (data.get("id"),))
     conn.commit()
     cursor.close()
     conn.close()
