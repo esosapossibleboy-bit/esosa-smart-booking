@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import "./App.css";
 
-const RENDER_HOST = "https://esosa-booking-api.onrender.com";
+const RENDER_HOST = "esosa-booking-api.onrender.com";
 const API_BASE = `https://${RENDER_HOST}`;
 
 interface TimeSlot {
