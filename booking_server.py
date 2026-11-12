@@ -1,9 +1,8 @@
 import os
 import io
 import datetime
-import smtplib
-from email.message import EmailMessage
 from functools import wraps
+import requests
 import jwt
 import psycopg2
 from psycopg2.extras import RealDictCursor
@@ -18,9 +17,7 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 SECRET_KEY = os.environ.get("SECRET_KEY", "esosa-booking-admin-super-secret-key-2026-secure")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
-
-SMTP_EMAIL = os.environ.get("SMTP_EMAIL")
-SMTP_PASSWORD = os.environ.get("SMTP_PASSWORD")
+RESEND_API_KEY = os.environ.get("RESEND_API_KEY")
 
 SERVICE_CATALOG = {
     "1-on-1 Software Coaching": 120.00,
@@ -77,28 +74,33 @@ def admin_required(f):
     return decorated
 
 def send_confirmation_email(to_email, client_name, service, amount, date_str, slot_str, appt_id):
-    if not SMTP_EMAIL or not SMTP_PASSWORD:
+    if not RESEND_API_KEY:
         print(f"Email Simulated To: {to_email} | Booking #{appt_id}: {service}")
         return False
     try:
-        msg = EmailMessage()
-        msg["Subject"] = f"Booking Confirmed (#{appt_id}): {service}"
-        msg["From"] = SMTP_EMAIL
-        msg["To"] = to_email
-        msg.set_content(
-            f"Hi {client_name},\n\n"
-            f"Your appointment is confirmed and paid!\n"
-            f"Confirmation ID: #{appt_id}\n"
-            f"Service: {service}\n"
-            f"Amount Paid: ${amount:.2f}\n"
-            f"Date & Time: {date_str} at {slot_str}\n\n"
-            f"Thank you for booking with Esosa Smart Booking!"
+        res = requests.post(
+            "https://resend.com",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "from": "Esosa Smart Booking <onboarding@resend.dev>",
+                "to": [to_email],
+                "subject": f"Booking Confirmed (#{appt_id}): {service}",
+                "text": (
+                    f"Hi {client_name},\n\n"
+                    f"Your appointment is confirmed and paid!\n"
+                    f"Confirmation ID: #{appt_id}\n"
+                    f"Service: {service}\n"
+                    f"Amount Paid: ${amount:.2f}\n"
+                    f"Date & Time: {date_str} at {slot_str}\n\n"
+                    f"Thank you for booking with Esosa Smart Booking!"
+                ),
+            },
+            timeout=10,
         )
-        smtp_host = "smtp." + "gmail.com"
-        with smtplib.SMTP_SSL(smtp_host, 465) as smtp:
-            smtp.login(SMTP_EMAIL, SMTP_PASSWORD)
-            smtp.send_message(msg)
-        return True
+        return res.status_code in (200, 201)
     except Exception as e:
         print(f"Email send failed: {e}")
         return False
@@ -161,7 +163,7 @@ def book_appointment():
             """,
             (client_name, client_email, service_type, amount, f"Paid (Card **** {card_last4})", appointment_date, time_slot)
         )
-        new_id = cursor.fetchone()
+        (new_id,) = cursor.fetchone()
         conn.commit()
         email_sent = send_confirmation_email(client_email, client_name, service_type, amount, appointment_date, time_slot, new_id)
         return jsonify({
