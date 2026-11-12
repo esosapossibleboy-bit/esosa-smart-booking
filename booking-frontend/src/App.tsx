@@ -185,9 +185,9 @@ export default function App() {
             <div className="field-group">
               <label>Payment Card (Last 4 Digits)</label>
               <input
-                type="text"
+                type="password"
                 maxLength={4}
-                placeholder="e.g. 4242"
+                placeholder="****"
                 value={cardLast4}
                 onChange={(e) => setCardLast4(e.target.value)}
               />
